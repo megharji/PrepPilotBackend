@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { getUserById, loginUser, registerUser } from "../services/auth.service.js";
+import { loginUser, registerUser } from "../services/auth.service.js";
 import { ApiError } from "../utils/ApiError.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -18,16 +18,17 @@ export const register = async (req: Request, res: Response) => {
         throw new ApiError(400, "Password must be at least 6 characters");
     }
 
-    const user = await registerUser({
+    const { user, token } = await registerUser({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
     });
 
+    // Response login jaisa hi: { user, token }
     res.status(201).json({
         success: true,
         message: "User registered successfully",
-        data: user,
+        data: { user, token },
     });
 };
 
@@ -51,20 +52,5 @@ export const login = async (req: Request, res: Response) => {
         success: true,
         message: "Login successful",
         data: { user, token },
-    });
-};
-
-export const getMe = async (req: Request, res: Response) => {
-    // authenticate middleware ke baad hi ye chalta hai
-    if (!req.user) {
-        throw new ApiError(401, "Not authenticated");
-    }
-
-    const user = await getUserById(req.user.id);
-
-    res.status(200).json({
-        success: true,
-        message: "Profile fetched successfully",
-        data: user,
     });
 };

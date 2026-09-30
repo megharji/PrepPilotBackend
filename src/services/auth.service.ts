@@ -4,7 +4,8 @@ import { ApiError } from "../utils/ApiError.js";
 import { generateToken } from "../utils/jwt.js";
 import type { LoginInput, RegisterInput, User, UserWithPassword } from "../types/auth.types.js";
 
-export const registerUser = async ({ name, email, password }: RegisterInput): Promise<User> => {
+// Register ke saath hi token bhi, taaki user ko alag se login na karna pade
+export const registerUser = async ({ name, email, password }: RegisterInput): Promise<{ user: User; token: string }> => {
     // Check email already exists
     const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (existing.rowCount) {
@@ -15,14 +16,15 @@ export const registerUser = async ({ name, email, password }: RegisterInput): Pr
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // PostgreSQL me user save
+    let user: User;
     try {
         const result = await pool.query<User>(
             `INSERT INTO users (name, email, password)
              VALUES ($1, $2, $3)
-             RETURNING id, name, email, created_at`,
+             RETURNING id, name, email, created_at AS "createdAt"`,
             [name, email, hashedPassword]
         );
-        return result.rows[0]!;
+        user = result.rows[0]!;
     } catch (err: any) {
         // Same email ke do request ek saath aaye to UNIQUE constraint pakad leta hai
         if (err.code === "23505") {
@@ -30,12 +32,16 @@ export const registerUser = async ({ name, email, password }: RegisterInput): Pr
         }
         throw err;
     }
+
+    const token = generateToken({ id: user.id, email: user.email });
+
+    return { user, token };
 };
 
 export const loginUser = async ({ email, password }: LoginInput): Promise<{ user: User; token: string }> => {
     // Email se user dhundo
     const result = await pool.query<UserWithPassword>(
-        "SELECT id, name, email, password, created_at FROM users WHERE email = $1",
+        `SELECT id, name, email, password, created_at AS "createdAt" FROM users WHERE email = $1`,
         [email]
     );
     const found = result.rows[0];
@@ -52,19 +58,4 @@ export const loginUser = async ({ email, password }: LoginInput): Promise<{ user
     const token = generateToken({ id: user.id, email: user.email });
 
     return { user, token };
-};
-
-export const getUserById = async (id: string): Promise<User> => {
-    const result = await pool.query<User>(
-        "SELECT id, name, email, created_at FROM users WHERE id = $1",
-        [id]
-    );
-    const user = result.rows[0];
-
-    // Token valid hai par user delete ho chuka ho
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
-
-    return user;
 };

@@ -10,10 +10,10 @@ export interface LoginInput {
 }
 
 export interface User {
-    id: string;
+    id: number;
     name: string;
     email: string;
-    created_at: Date;
+    createdAt: Date;
 }
 
 // DB se aane wali row, jisme hashed password bhi hai (sirf service ke andar use karo)
