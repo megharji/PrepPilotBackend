@@ -1,9 +1,22 @@
 import { Router } from "express";
-import { createInterviewHandler } from "../controllers/interview.controller.js";
+import {
+    createInterviewHandler,
+    deleteInterviewHandler,
+    getInterviewHandler,
+    getInterviewsHandler,
+    prepareQuestionsHandler,
+    submitInterviewHandler,
+} from "../controllers/interview.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.post("/interviews",authenticate, createInterviewHandler);
+router.post("/interviews", authenticate, createInterviewHandler);
+router.get("/interviews", authenticate, getInterviewsHandler);
+router.get("/interviews/:id", authenticate, getInterviewHandler);
+router.delete("/interviews/:id", authenticate, deleteInterviewHandler);
+// AI (Groq): sawaal banana, aur jawab check karke score
+router.post("/interviews/:id/questions", authenticate, prepareQuestionsHandler);
+router.post("/interviews/:id/submit", authenticate, submitInterviewHandler);
 
 export default router;

@@ -33,9 +33,12 @@ const createInterviewsTable = `
         user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         target_role       VARCHAR(100) NOT NULL,
         experience_years  SMALLINT NOT NULL CHECK (experience_years BETWEEN 0 AND 50),
+        tech_stack        VARCHAR(50),
         job_description   TEXT,
         resume_id         INTEGER REFERENCES resumes(id) ON DELETE SET NULL,
-        interview_type    VARCHAR(20) NOT NULL CHECK (interview_type IN ('TECHNICAL', 'BEHAVIORAL', 'HR', 'MIXED')),
+        interview_type    VARCHAR(20) NOT NULL
+                          CONSTRAINT interviews_interview_type_check
+                          CHECK (interview_type IN ('TECHNICAL', 'BEHAVIORAL', 'HR', 'MIXED', 'CODING')),
         difficulty        VARCHAR(20) NOT NULL DEFAULT 'AUTO' CHECK (difficulty IN ('AUTO', 'BEGINNER', 'INTERMEDIATE', 'ADVANCED')),
         status            VARCHAR(20) NOT NULL DEFAULT 'SETUP' CHECK (status IN ('SETUP', 'IN_PROGRESS', 'COMPLETED')),
         created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -43,10 +46,25 @@ const createInterviewsTable = `
     CREATE INDEX IF NOT EXISTS idx_interviews_user_id ON interviews(user_id);
 `;
 
+// Pehle se bani table ko naye schema pe laana (baar baar chalana safe hai, data nahi chhedta):
+// tech_stack column, AI ke sawaal (questions) aur score (report), kab khatam hua aur kitna time laga,
+// CODING type allow karna
+const migrateInterviewTypes = `
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS tech_stack VARCHAR(50);
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS questions JSONB;
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS report JSONB;
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS duration_sec INTEGER;
+    ALTER TABLE interviews DROP CONSTRAINT IF EXISTS interviews_interview_type_check;
+    ALTER TABLE interviews ADD CONSTRAINT interviews_interview_type_check
+        CHECK (interview_type IN ('TECHNICAL', 'BEHAVIORAL', 'HR', 'MIXED', 'CODING'));
+`;
+
 // Server start hote hi tables bana deta hai (agar pehle se nahi hain)
 export const initDb = async () => {
     await pool.query(createUsersTable);
     await pool.query(createResumesTable);
     await pool.query(createInterviewsTable);
+    await pool.query(migrateInterviewTypes);
     console.log("Database connected & tables ready");
 };

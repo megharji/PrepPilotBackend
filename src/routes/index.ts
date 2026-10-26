@@ -2,6 +2,7 @@ import { Router } from "express";
 import authRoutes from "./auth.routes.js";
 import interviewRoutes from "./interview.routes.js";
 import resumeRoutes from "./resume.routes.js";
+import transcribeRoutes from "./transcribe.routes.js";
 import userRoutes from "./user.routes.js";
 
 const router = Router();
@@ -11,5 +12,6 @@ router.use(authRoutes);
 router.use(userRoutes);
 router.use(resumeRoutes);
 router.use(interviewRoutes);
+router.use(transcribeRoutes);
 
 export default router;
