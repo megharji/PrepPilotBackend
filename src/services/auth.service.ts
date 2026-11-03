@@ -2,10 +2,25 @@ import bcrypt from "bcryptjs";
 import { pool } from "../config/db.js";
 import { ApiError } from "../utils/ApiError.js";
 import { generateToken } from "../utils/jwt.js";
+import { issueRefreshToken, rotateRefreshToken } from "./refreshToken.service.js";
+import { getUserById } from "./user.service.js";
 import type { LoginInput, RegisterInput, User, UserWithPassword } from "../types/auth.types.js";
 
+// token: chhota access token (response body me). refreshToken: lamba, controller ise httpOnly cookie me rakhta hai.
+export interface Session {
+    user: User;
+    token: string;
+    refreshToken: string;
+}
+
+const startSession = async (user: User): Promise<Session> => ({
+    user,
+    token: generateToken({ id: user.id, email: user.email }),
+    refreshToken: await issueRefreshToken(user.id),
+});
+
 // Register ke saath hi token bhi, taaki user ko alag se login na karna pade
-export const registerUser = async ({ name, email, password }: RegisterInput): Promise<{ user: User; token: string }> => {
+export const registerUser = async ({ name, email, password }: RegisterInput): Promise<Session> => {
     // Check email already exists
     const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (existing.rowCount) {
@@ -33,12 +48,10 @@ export const registerUser = async ({ name, email, password }: RegisterInput): Pr
         throw err;
     }
 
-    const token = generateToken({ id: user.id, email: user.email });
-
-    return { user, token };
+    return startSession(user);
 };
 
-export const loginUser = async ({ email, password }: LoginInput): Promise<{ user: User; token: string }> => {
+export const loginUser = async ({ email, password }: LoginInput): Promise<Session> => {
     // Email se user dhundo
     const result = await pool.query<UserWithPassword>(
         `SELECT id, name, email, password, created_at AS "createdAt" FROM users WHERE email = $1`,
@@ -55,7 +68,17 @@ export const loginUser = async ({ email, password }: LoginInput): Promise<{ user
     // Response me password nahi bhejna
     const { password: _password, ...user } = found;
 
-    const token = generateToken({ id: user.id, email: user.email });
+    return startSession(user);
+};
 
-    return { user, token };
+// Access token expire: cookie wale refresh token se naya access token + naya refresh token (rotation)
+export const refreshSession = async (refreshToken: string): Promise<Session> => {
+    const rotated = await rotateRefreshToken(refreshToken);
+    // Taaza user (naam/email badla ho to wahi). User delete ho gaya to 404 -> frontend logout karega
+    const user = await getUserById(rotated.userId);
+    return {
+        user,
+        token: generateToken({ id: user.id, email: user.email }),
+        refreshToken: rotated.refreshToken,
+    };
 };
