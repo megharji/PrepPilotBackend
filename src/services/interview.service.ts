@@ -1,14 +1,14 @@
 import { pool } from "../config/db.js";
 import { ApiError } from "../utils/ApiError.js";
 import { extractResumeText } from "../utils/resumeText.js";
-import { generateQuestions, scoreAnswers } from "./ai.service.js";
-import type { Question, SubmittedAnswer } from "../types/ai.types.js";
+import { generateFollowUp, generateQuestions, scoreAnswers } from "./ai.service.js";
+import type { Question, SubmittedAnswer, Turn } from "../types/ai.types.js";
 import type { CreateInterviewInput, Interview, InterviewDetail } from "../types/interview.types.js";
 
 // DB columns -> API ke camelCase naam (sab queries me same)
 const INTERVIEW_COLUMNS = `id, user_id AS "userId", target_role AS "targetRole",
     experience_years AS "experienceYears", tech_stack AS "techStack", job_description AS "jobDescription",
-    resume_id AS "resumeId", interview_type AS "interviewType", difficulty, status,
+    resume_id AS "resumeId", interview_type AS "interviewType", difficulty, interview_length AS "length", status,
     created_at AS "createdAt", (report->>'overall')::float AS "overallScore",
     completed_at AS "completedAt", duration_sec AS "durationSec"`;
 
@@ -61,8 +61,8 @@ export const createInterview = async (input: CreateInterviewInput): Promise<Inte
 
     try {
         const result = await pool.query<Interview>(
-            `INSERT INTO interviews (user_id, target_role, experience_years, tech_stack, job_description, resume_id, interview_type, difficulty)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO interviews (user_id, target_role, experience_years, tech_stack, job_description, resume_id, interview_type, difficulty, interview_length)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING ${INTERVIEW_COLUMNS}`,
             [
                 input.userId,
@@ -73,6 +73,7 @@ export const createInterview = async (input: CreateInterviewInput): Promise<Inte
                 input.resumeId,
                 input.interviewType,
                 input.difficulty,
+                input.length,
             ]
         );
         return result.rows[0]!;
@@ -95,6 +96,7 @@ interface InterviewAiRow {
     experience_years: number;
     interview_type: Interview["interviewType"];
     difficulty: Interview["difficulty"];
+    interview_length: Interview["length"];
     job_description: string | null;
     status: Interview["status"];
     questions: Question[] | null;
@@ -106,7 +108,7 @@ interface InterviewAiRow {
 const getAiRow = async (id: number, userId: number): Promise<InterviewAiRow> => {
     const result = await pool.query<InterviewAiRow>(
         `SELECT i.id, i.target_role, i.tech_stack, i.experience_years, i.interview_type, i.difficulty,
-                i.job_description, i.status, i.questions,
+                i.interview_length, i.job_description, i.status, i.questions,
                 r.file_path AS resume_path, r.mime_type AS resume_mime
          FROM interviews i
          LEFT JOIN resumes r ON r.id = i.resume_id
@@ -140,6 +142,7 @@ export const prepareQuestions = async (id: number, userId: number): Promise<Ques
         experienceYears: row.experience_years,
         interviewType: row.interview_type,
         difficulty: row.difficulty,
+        length: row.interview_length,
         jobDescription: row.job_description,
         resumeText,
     });
@@ -152,6 +155,61 @@ export const prepareQuestions = async (id: number, userId: number): Promise<Ques
         [JSON.stringify(questions), id, userId]
     );
     return saved.rows[0]?.questions ?? questions;
+};
+
+// User ke jawab pe AI follow-up banao aur us sawaal ke saath save karo (score isi pe hoga).
+// Pehle ban chuka ho (retry / doosra tab) to wahi: free limit bachti hai aur sawaal badalta nahi.
+export const createLiveFollowUp = async (
+    id: number,
+    userId: number,
+    questionIndex: number,
+    answer: string
+): Promise<Turn> => {
+    const row = await getAiRow(id, userId);
+    if (row.status !== "IN_PROGRESS" || !row.questions?.length) {
+        throw new ApiError(409, "This interview is not in progress");
+    }
+    if (row.difficulty === "BEGINNER") {
+        throw new ApiError(400, "Beginner interviews don't have follow-up questions");
+    }
+    const question = row.questions[questionIndex];
+    if (!question) {
+        throw new ApiError(404, "Question not found");
+    }
+    if (question.liveFollowUp) {
+        return question.liveFollowUp;
+    }
+
+    const turn = await generateFollowUp(
+        {
+            targetRole: row.target_role,
+            techStack: row.tech_stack,
+            experienceYears: row.experience_years,
+            interviewType: row.interview_type,
+            difficulty: row.difficulty,
+        },
+        question,
+        answer
+    );
+
+    // Do request ek saath aayi hon to jo pehle save hua wahi rahega
+    const saved = await pool.query<{ turn: Turn | null }>(
+        `UPDATE interviews
+         SET questions = jsonb_set(questions, ARRAY[$1::int::text, 'liveFollowUp'], $2::jsonb)
+         WHERE id = $3 AND user_id = $4 AND status = 'IN_PROGRESS' AND questions->$1::int->'liveFollowUp' IS NULL
+         RETURNING questions->$1::int->'liveFollowUp' AS turn`,
+        [questionIndex, JSON.stringify(turn), id, userId]
+    );
+    if (saved.rows[0]?.turn) {
+        return saved.rows[0].turn;
+    }
+
+    const latest = await getAiRow(id, userId);
+    const existing = latest.questions?.[questionIndex]?.liveFollowUp;
+    if (!existing) {
+        throw new ApiError(409, "This interview is not in progress");
+    }
+    return existing;
 };
 
 // Jawab AI se check karwao, report save karo, interview COMPLETED

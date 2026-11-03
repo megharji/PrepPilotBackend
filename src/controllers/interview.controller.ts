@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import {
     createInterview,
+    createLiveFollowUp,
     deleteInterview,
     getInterviewById,
     getInterviewsByUser,
@@ -8,7 +9,7 @@ import {
     submitInterview,
 } from "../services/interview.service.js";
 import type { SubmittedAnswer } from "../types/ai.types.js";
-import { DIFFICULTIES, INTERVIEW_TYPES } from "../types/interview.types.js";
+import { DIFFICULTIES, INTERVIEW_LENGTHS, INTERVIEW_TYPES } from "../types/interview.types.js";
 import { ApiError } from "../utils/ApiError.js";
 
 const MAX_JD_LENGTH = 10000;
@@ -40,7 +41,7 @@ export const createInterviewHandler = async (req: Request, res: Response) => {
         throw new ApiError(401, "Not authenticated");
     }
 
-    const { targetRole, experienceYears, techStack, jobDescription, resumeId, interviewType, difficulty } =
+    const { targetRole, experienceYears, techStack, jobDescription, resumeId, interviewType, difficulty, length } =
         req.body ?? {};
 
     // Validation
@@ -68,6 +69,10 @@ export const createInterviewHandler = async (req: Request, res: Response) => {
     if (!isEmpty(difficulty) && !isOneOf(DIFFICULTIES, difficulty)) {
         throw new ApiError(400, `Difficulty must be one of: ${DIFFICULTIES.join(", ")}`);
     }
+    // Length optional hai; nahi bheji to STANDARD (purana frontend bhi chalta rahe)
+    if (!isEmpty(length) && !isOneOf(INTERVIEW_LENGTHS, length)) {
+        throw new ApiError(400, `Length must be one of: ${INTERVIEW_LENGTHS.join(", ")}`);
+    }
     // Resume optional hai; pehle POST /api/resumes se upload karke uski id yahan bhejo
     if (!isEmpty(resumeId) && !isValidId(resumeId)) {
         throw new ApiError(400, "Resume id is invalid");
@@ -82,6 +87,7 @@ export const createInterviewHandler = async (req: Request, res: Response) => {
         resumeId: isEmpty(resumeId) ? null : resumeId,
         interviewType,
         difficulty: isEmpty(difficulty) ? "AUTO" : difficulty,
+        length: isEmpty(length) ? "STANDARD" : length,
     });
 
     res.status(201).json({
@@ -150,8 +156,34 @@ const isAnswer = (a: unknown): a is SubmittedAnswer => {
         typeof v.isFollowUp === "boolean" &&
         typeof v.skipped === "boolean" &&
         typeof v.answer === "string" &&
-        v.answer.length <= MAX_ANSWER_LENGTH
+        v.answer.length <= MAX_ANSWER_LENGTH &&
+        (v.liveFollowUp === undefined || typeof v.liveFollowUp === "boolean")
     );
+};
+
+// POST /interviews/:id/follow-up: { questionIndex, answer } -> user ke jawab pe AI ka follow-up sawaal
+export const liveFollowUpHandler = async (req: Request, res: Response) => {
+    if (!req.user) {
+        throw new ApiError(401, "Not authenticated");
+    }
+
+    const id = parseInterviewId(req);
+    const { questionIndex, answer } = req.body ?? {};
+
+    if (!Number.isInteger(questionIndex) || questionIndex < 0 || questionIndex >= MAX_ANSWERS) {
+        throw new ApiError(400, "Question index is invalid");
+    }
+    if (typeof answer !== "string" || !answer.trim() || answer.length > MAX_ANSWER_LENGTH) {
+        throw new ApiError(400, `Answer is required (max ${MAX_ANSWER_LENGTH} characters)`);
+    }
+
+    const followUp = await createLiveFollowUp(id, req.user.id, questionIndex, answer.trim());
+
+    res.status(200).json({
+        success: true,
+        message: "Follow-up ready",
+        data: followUp,
+    });
 };
 
 // POST /interviews/:id/submit: jawab AI se check, report save, interview COMPLETED

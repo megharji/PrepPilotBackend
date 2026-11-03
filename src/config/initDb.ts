@@ -75,6 +75,8 @@ const migrateInterviewTypes = `
     ALTER TABLE interviews ADD COLUMN IF NOT EXISTS report JSONB;
     ALTER TABLE interviews ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
     ALTER TABLE interviews ADD COLUMN IF NOT EXISTS duration_sec INTEGER;
+    ALTER TABLE interviews ADD COLUMN IF NOT EXISTS interview_length VARCHAR(10) NOT NULL DEFAULT 'STANDARD'
+        CHECK (interview_length IN ('SHORT', 'STANDARD', 'LONG'));
     ALTER TABLE interviews DROP CONSTRAINT IF EXISTS interviews_interview_type_check;
     ALTER TABLE interviews ADD CONSTRAINT interviews_interview_type_check
         CHECK (interview_type IN ('TECHNICAL', 'BEHAVIORAL', 'HR', 'MIXED', 'CODING'));

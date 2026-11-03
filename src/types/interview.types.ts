@@ -5,9 +5,12 @@ export const INTERVIEW_TYPES =["TECHNICAL", "BEHAVIORAL", "HR", "MIXED", "CODING
 // Coding round me bhi yahi values; frontend inhe Basic / Medium / Hard dikhata hai
 export const DIFFICULTIES = ["AUTO", "BEGINNER", "INTERMEDIATE", "ADVANCED"] as const;
 export const INTERVIEW_STATUSES = ["SETUP", "IN_PROGRESS", "COMPLETED"] as const;
+// Kitne main sawaal (ai.service.ts QUESTION_COUNTS): Short / Standard / Long
+export const INTERVIEW_LENGTHS = ["SHORT", "STANDARD", "LONG"] as const;
 
 export type InterviewType = (typeof INTERVIEW_TYPES)[number];
 export type Difficulty = (typeof DIFFICULTIES)[number];
+export type InterviewLength = (typeof INTERVIEW_LENGTHS)[number];
 export type InterviewStatus = (typeof INTERVIEW_STATUSES)[number];
 
 export interface CreateInterviewInput {
@@ -20,6 +23,7 @@ export interface CreateInterviewInput {
     resumeId: number | null;
     interviewType: InterviewType;
     difficulty: Difficulty;
+    length: InterviewLength;
 }
 
 export interface Interview {
@@ -32,6 +36,7 @@ export interface Interview {
     resumeId: number | null;
     interviewType: InterviewType;
     difficulty: Difficulty;
+    length: InterviewLength;
     status: InterviewStatus;
     createdAt: Date;
     // AI score (report.overall); jab tak interview poora na ho, null

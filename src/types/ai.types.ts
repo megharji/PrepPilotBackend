@@ -16,7 +16,10 @@ export interface Turn {
 export interface Question extends Turn {
     id: string;
     topic: string;
+    // Pehle se bana follow-up (backup: live wala na bane to yahi)
     followUps: Turn[];
+    // User ke asli jawab pe AI ka banaya follow-up (POST /interviews/:id/follow-up)
+    liveFollowUp?: Turn;
 }
 
 // Frontend se aaya ek jawab. Sawaal ka text client se nahi lete, DB me save sawaal se milate hain.
@@ -25,6 +28,8 @@ export interface SubmittedAnswer {
     isFollowUp: boolean;
     answer: string;
     skipped: boolean;
+    // Follow-up wala jawab: live follow-up poocha gaya tha (true) ya pehle se bana (false / nahi bheja)
+    liveFollowUp?: boolean;
 }
 
 export interface TurnResult {
